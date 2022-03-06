@@ -1,0 +1,28 @@
+{
+    "experiment_name":"LongFormer",
+
+    "dataset": {
+        "train_csv" : "../input/feedback-prize-2021/train.csv",
+        "train_text" : "../input/feedback-prize-2021/train",
+        "test_text" : "../input/feedback-prize-2021/test/"
+        },
+
+    "model_load": {
+        "LOAD_TOKENS_FROM" : "NONE",
+        "LOAD_MODEL_FROM" : "NONE",
+        "DOWNLOAD_MODEL_PATH" : "NEW_MODEL"
+        },
+    
+    "model_config": {
+        "MODEL_NAME" : "allenai/longformer_base_4096",   
+        "max_length" : 1024,
+        "train_batch_size" : 4,
+        "valid_batch_size" : 4,
+        "epochs" : 5,
+        "learning_rates" : [2.5e-5, 2.5e-5, 2.5e-6, 2.5e-6, 2.5e-7],
+        "max_grad_norm" : 10,
+        "device": "NONE"
+    }
+
+
+}
