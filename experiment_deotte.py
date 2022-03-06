@@ -1,11 +1,11 @@
 import numpy as np, os 
 import pandas as pd, gc 
 from tqdm import tqdm
-import utils
 
 from create_dataset_deotte import *
 from dataloader_deotte import *
 from model_deotte import *
+from utils import *
 
 from transformers import AutoTokenizer, AutoModelForTokenClassification
 from torch.utils.data import Dataset, DataLoader
@@ -13,14 +13,12 @@ import torch
 from sklearn.metrics import accuracy_score
 
 
-
 #Setup
 class Experiment(object):
     def __init__(self, name):
         
         #Change this
-        os.environ["CUDA_VISIBLE_DEVICES"]="0" #0,1,2,3 for four gpu
-
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         config = read_file_in_dir('./', name + '.json')
 
         #Import data and convert to NER tokens - see create_dataset_deotte
@@ -51,10 +49,10 @@ class Experiment(object):
         testing_loader = DataLoader(testing_set, **test_params)
 
         # CREATE MODEL
-        config_model = AutoConfig.from_pretrained(DOWNLOADED_MODEL_PATH+'/config.json') 
+        config_model = AutoConfig.from_pretrained(config['DOWNLOADED_MODEL_PATH'] +'/config.json') 
         model = AutoModelForTokenClassification.from_pretrained(
-                        DOWNLOADED_MODEL_PATH+'/pytorch_model.bin',config=config_model)
-        model.to(config['device'])
+                        config['DOWNLOADED_MODEL_PATH'] + '/pytorch_model.bin',config=config_model)
+        model.to(device)
         optimizer = torch.optim.Adam(params=model.parameters(), lr=config['learning_rates'][0])
 
         # TEST DATASET
