@@ -27,6 +27,7 @@ class FeedbackDataset(Dataset):
         self.tokenizer = tokenizer
         self.max_len = max_len
         self.get_wids = get_wids # True for validation
+        self.config_data = config_data
 
     def __getitem__(self, index):
         # GET TEXT AND WORD LABELS 
@@ -53,7 +54,7 @@ class FeedbackDataset(Dataset):
                     label_ids.append( target_id_map[word_labels[word_idx]] )
                 else:
                     ## We can simplify this part by always labeling all tokens
-                    if config_data['experiment']['LABEL_ALL_SUBTOKENS']:
+                    if self.config_data['experiment']['LABEL_ALL_SUBTOKENS']:
                         label_ids.append( target_id_map[word_labels[word_idx]] )
                     else:
                         label_ids.append(-100)
@@ -98,7 +99,7 @@ def convert_text_to_ner(config_data, train_text_df, train_df):
 
     # config_data = read_file_in_dir('./', name + '.json')
 
-    if config_data["model_load"]["LOAD_TOKENS_FROM"] == None:
+    if config_data["experiment"]["LOAD_TOKENS_FROM"] == "NONE":
         
         all_entities = []
 
@@ -117,7 +118,7 @@ def convert_text_to_ner(config_data, train_text_df, train_df):
         train_text_df.to_csv('train_NER.csv',index=False)
         
     else:
-        token_path = config_data['model_load']["LOAD_TOKENS_FROM"]
+        token_path = config_data['experiment']["LOAD_TOKENS_FROM"]
         train_text_df = pd.read_csv(f'{token_path}/train_NER.csv')
         # pandas saves lists as string, we must convert back
         train_text_df.entities = train_text_df.entities.apply(lambda x: literal_eval(x) )
@@ -125,7 +126,7 @@ def convert_text_to_ner(config_data, train_text_df, train_df):
     return train_text_df
 
 
-def get_dataset(config_data):
+def get_dataset(config_data, tokenizer):
     train_text_df, train_df = create_dfs(config_data)
     train_text_df = convert_text_to_ner(config_data, train_text_df, train_df)
     IDS = train_df.id.unique()
@@ -147,7 +148,7 @@ def get_dataset(config_data):
     val_dataset = data.loc[data['id'].isin(IDS[valid_idx])].reset_index(drop=True)
     test_dataset = data.loc[data['id'].isin(IDS[test_idx])].reset_index(drop=True)
 
-    tokenizer = AutoTokenizer.from_pretrained(config_data['model']['transformer_path']) 
+    # tokenizer = AutoTokenizer.from_pretrained(config_data['model']['transformer_path']) 
     training_set = FeedbackDataset(config_data, train_dataset, tokenizer, config_data['experiment']['max_length'], False)
     validation_set = FeedbackDataset(config_data, val_dataset, tokenizer, config_data['experiment']['max_length'], True)
     testing_set = FeedbackDataset(config_data, test_dataset, tokenizer, config_data['experiment']['max_length'], True)
