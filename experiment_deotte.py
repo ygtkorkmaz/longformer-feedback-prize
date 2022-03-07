@@ -7,7 +7,7 @@ from dataloader_deotte import *
 from model_deotte import *
 from utils import *
 
-from transformers import AutoTokenizer, AutoModelForTokenClassification
+from transformers import AutoTokenizer, AutoModelForTokenClassification, AutoConfig
 from torch.utils.data import Dataset, DataLoader
 import torch
 from sklearn.metrics import accuracy_score
@@ -48,21 +48,27 @@ class Experiment(object):
         training_loader = DataLoader(training_set, **train_params)
         testing_loader = DataLoader(testing_set, **test_params)
 
-        # CREATE MODEL
-        config_model = AutoConfig.from_pretrained(config['DOWNLOADED_MODEL_PATH'] +'/config.json') 
-        model = AutoModelForTokenClassification.from_pretrained(
-                        config['DOWNLOADED_MODEL_PATH'] + '/pytorch_model.bin',config=config_model)
-        model.to(device)
-        optimizer = torch.optim.Adam(params=model.parameters(), lr=config['learning_rates'][0])
-
         # TEST DATASET
-        test_texts_set = dataset(test_texts, tokenizer, config['max_length'], True)
+        test_texts_set = dataset(test_texts, tokenizer, config['model_config']['max_length'], True)
         test_texts_loader = DataLoader(test_texts_set, **test_params)
 
+        
+        #Creates configuration files for particular model
+        Model(config)
+
+        #Instantiates configuration for model
+        config_model = AutoConfig.from_pretrained(config["model_load"]['DOWNLOADED_MODEL_PATH'] +'/config.json') 
+        
+        #Calls model
+        model = AutoModelForTokenClassification.from_pretrained(
+                        config["model_load"]['DOWNLOADED_MODEL_PATH'] + '/pytorch_model.bin',config=config_model)
+        optimizer = torch.optim.Adam(params=model.parameters(), lr=config["model_config"]['learning_rates'][0])
+        
         #Def train
 
         # https://www.kaggle.com/raghavendrakotala/fine-tunned-on-roberta-base-as-ner-problem-0-533
-        def train(epoch):
+        
+        def train_epoch(epoch):
             tr_loss, tr_accuracy = 0, 0
             nb_tr_examples, nb_tr_steps = 0, 0
             #tr_preds, tr_labels = [], []
@@ -122,26 +128,28 @@ class Experiment(object):
 
 
         # LOOP TO TRAIN MODEL (or load model)
-        def train_model():
+        def train():
 
             ##FIX NAMING CONVENTION HERE
-
-            if not LOAD_MODEL_FROM:
-                for epoch in range(config['epochs']):
-                    
+            VER = config['model_load']["VER"]
+            if config['model_load']["LOAD_MODEL_FROM"] == "NONE":
+                
+                for epoch in range(config['model_config']['epochs']):
                     print(f"### Training epoch: {epoch + 1}")
                     for g in optimizer.param_groups: 
-                        g['lr'] = config['learning_rates'][epoch]
+                        g['lr'] = config['model_config']['learning_rates'][epoch]
                     lr = optimizer.param_groups[0]['lr']
                     print(f'### LR = {lr}\n')
                     
-                    train(epoch)
+                    train_epoch(epoch)
                     torch.cuda.empty_cache()
                     gc.collect()
                     
                 torch.save(model.state_dict(), f'longformer_v{VER}.pt')
             else:
-                model.load_state_dict(torch.load(f'{LOAD_MODEL_FROM}/longformer_v{VER}.pt'))
+                model.load_state_dict(
+                    torch.load(
+                    f'{config['model_load']["LOAD_MODEL_FROM"]}/longformer_v{VER}.pt'))
                 print('Model loaded.')
 
         #Inference

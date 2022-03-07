@@ -4,13 +4,14 @@
     "dataset": {
         "train_csv" : "../input/feedback-prize-2021/train.csv",
         "train_text" : "../input/feedback-prize-2021/train",
-        "test_text" : "../input/feedback-prize-2021/test/"
+        "test_text" : "../input/feedback-prize-2021/test"
         },
 
     "model_load": {
         "LOAD_TOKENS_FROM" : "NONE",
         "LOAD_MODEL_FROM" : "NONE",
-        "DOWNLOAD_MODEL_PATH" : "NEW_MODEL"
+        "DOWNLOAD_MODEL_PATH" : "NEW_MODEL",
+        "VER" : 0
         },
     
     "model_config": {
@@ -20,8 +21,7 @@
         "valid_batch_size" : 4,
         "epochs" : 5,
         "learning_rates" : [2.5e-5, 2.5e-5, 2.5e-6, 2.5e-6, 2.5e-7],
-        "max_grad_norm" : 10,
-        "device": "NONE"
+        "max_grad_norm" : 10
     }
 
 
