@@ -4,12 +4,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 from datetime import datetime
+import gc
 
 from model import FeedbackModel
 from load_dataset import *
 from utils import *
 from constants import *
 from transformers import AutoTokenizer
+from sklearn import metrics
 
 
 class Experiment(object):
@@ -27,6 +29,7 @@ class Experiment(object):
         self.__test_loader = get_test_set(experiment_config, self.__tokenizer)
 
         # self.__generation_config = experiment_config['generation']
+        self.__num_labels = len(target_id_map)-1
         self.__epochs = experiment_config['experiment']['num_epochs']
         self.__learning_rate = experiment_config['experiment']['learning_rate']
         self.__current_epoch = 0
@@ -36,11 +39,14 @@ class Experiment(object):
         self.__best_loss = inf
 
         self.__device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.__model = FeedbackModel(experiment_config['model']['transformer_name'], experiment_config['model']['num_classes'])
+        self.__model = FeedbackModel(experiment_config['model']['transformer_name'], len(target_id_map)-1)
         params = list(self.__model.parameters())
         self.__criterion = nn.CrossEntropyLoss()
         self.__optimizer = torch.optim.AdamW(params, lr=self.__learning_rate, weight_decay=0.0001)
         self.__init_model()
+        os.makedirs(ROOT_STATS_DIR, exist_ok=True)
+        os.makedirs(self.__experiment_dir)
+
 
     def __init_model(self):
         if torch.cuda.is_available():
@@ -57,18 +63,31 @@ class Experiment(object):
             self.__record_stats(train_loss, val_loss)
             self.__log_epoch_stats(start_time)
             self.__save_model()
+        
+        # housekeeping
+        gc.collect() 
+        torch.cuda.empty_cache()
 
     def __train(self):
         self.__model.train()
         training_loss = []
 
-        for i, (ids, masks, targets) in enumerate(self.__train_loader):
+        for i, (ids, mask, targets) in enumerate(self.__train_loader):
             self.__optimizer.zero_grad()
             ids = ids.to(self.__device)
-            masks = masks.to(self.__device)
+            mask = mask.to(self.__device)
+            outputs = self.__model(ids, mask)
             # targets = nn.utils.rnn.pack_padded_sequence(captions, lengths, batch_first=True).data
-            outputs = self.__model(ids, masks)
-            loss = self.__criterion(outputs, targets)
+            active_loss = mask.view(-1) == 1
+            active_logits = outputs.view(-1, self.__num_labels)
+            true_labels = targets.view(-1)
+            predictions = active_logits.argmax(dim=-1)
+            idxs = np.where(active_loss.cpu().numpy() == 1)[0]
+            active_logits = active_logits[idxs]
+            true_labels = true_labels[idxs].to(torch.long)
+            true_labels = true_labels.to(self.__device)
+            active_logits = active_logits.to(self.__device)
+            loss = self.__criterion(active_logits, true_labels)
             training_loss.append(loss.item())
             loss.backward()
             self.__optimizer.step()
@@ -79,16 +98,31 @@ class Experiment(object):
         self.__model.eval()
         val_loss = 0
         loss_list = []
+        f1_score_list = []
 
         with torch.no_grad():
-            for i, (ids,masks, targets) in enumerate(self.__val_loader):
+            for i, (ids, mask, targets) in enumerate(self.__val_loader):
                 ids = ids.to(self.__device)
-                masks = masks.to(self.__device)
-                outputs = self.__model(ids, masks)
+                mask = mask.to(self.__device)
+                outputs = self.__model(ids, mask)
                 # targets = nn.utils.rnn.pack_padded_sequence(captions, lengths, batch_first=True).data
-                loss = self.__criterion(outputs, targets)
+                active_loss = mask.view(-1) == 1
+                active_logits = outputs.view(-1, self.__num_labels)
+                true_labels = targets.view(-1)
+                idxs = np.where(active_loss.cpu().numpy() == 1)[0]
+                active_logits = active_logits[idxs]
+                true_labels = true_labels[idxs].to(torch.long)
+                true_labels = true_labels.to(self.__device)
+                active_logits = active_logits.to(self.__device)
+                loss = self.__criterion(active_logits, true_labels)
                 loss_list.append(loss.item())
+                predictions = active_logits.argmax(dim=-1).cpu().numpy()
+                true_labels = true_labels.cpu().numpy()
+                f1_score = metrics.f1_score(true_labels, predictions, average="macro")
+                f1_score_list.append(f1_score)
+
             val_loss = np.mean(loss_list)
+            val_f1_score = np.mean(f1_score_list)
             if val_loss < self.__best_loss:
                 self.__best_loss = val_loss
                 self.__best_model = self.__model.state_dict()
@@ -97,7 +131,7 @@ class Experiment(object):
                                                                             self.__current_epoch)
                 self.__log(result_str)
 
-        return val_loss
+        return val_loss, val_f1_score
 
     def test(self, model_loc=None):
         self.__best_model = self.__model
@@ -110,24 +144,31 @@ class Experiment(object):
         self.__best_model.eval()
         test_loss = 0
         loss_list = []
-        acc_list = []       
+        f1_score_list = []       
         with torch.no_grad():
-            for i, (ids, masks, targets) in enumerate(self.__test_loader):
+            for i, (ids, mask, targets) in enumerate(self.__test_loader):
                 ids = ids.to(self.__device)
-                masks = masks.to(self.__device)
-                outputs = self.__model(ids, masks)
+                mask = mask.to(self.__device)
+                outputs = self.__model(ids, mask)
                 # targets = nn.utils.rnn.pack_padded_sequence(captions, lengths, batch_first=True).data
-                loss = self.__criterion(outputs, targets)
+                active_loss = mask.view(-1) == 1
+                active_logits = outputs.view(-1, self.__num_labels)
+                true_labels = targets.view(-1)
+                idxs = np.where(active_loss.cpu().numpy() == 1)[0]
+                active_logits = active_logits[idxs]
+                true_labels = true_labels[idxs].to(torch.long)
+                true_labels = true_labels.to(self.__device)
+                active_logits = active_logits.to(self.__device)
+                loss = self.__criterion(active_logits, true_labels)
                 loss_list.append(loss.item())
-                predictions = torch.argmax(outputs, axis=-1)
-                # batch_acc = (predictions==targets).sum()/len(targets)
-                # acc_list.append(batch_acc)
-                # if visualize:
-                #     self.test_visualizer(predictions, targets)
+                predictions = active_logits.argmax(dim=-1).cpu().numpy()
+                true_labels = true_labels.cpu().numpy()
+                f1_score = metrics.f1_score(true_labels, predictions, average="macro")
+                f1_score_list.append(f1_score)
             test_loss = np.mean(loss_list)
-            # accuracy = np.mean(acc_list)
+            test_f1_score = np.mean(f1_score_list)
 
-        result_str = "Test Performance: Loss: {}, accuracy: {}".format(test_loss)
+        result_str = "Test Performance: Loss: {}, f1 Score: {}".format(test_loss, test_f1_score)
         self.__log(result_str)
 
         return test_loss, predictions
