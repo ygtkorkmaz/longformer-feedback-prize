@@ -10,8 +10,7 @@ from model_final import *
 from load_dataset_final import *
 from utils import *
 from constants import *
-from transformers import AutoTokenizer
-from sklearn import metrics
+from sklearn.metrics import accuracy_score
 
 class Experiment(object):
     def __init__(self, name):
@@ -19,6 +18,7 @@ class Experiment(object):
         if experiment_config is None:
             raise Exception("Configuration file doesn't exist: ", name)
         self.__name = experiment_config['experiment_name']
+        self.__experiment_config = experiment_config
         # self.__transformer_name = experiment_config['model']['transformer_name']
         self.__experiment_dir = os.path.join(ROOT_STATS_DIR, self.__name)
         # self.__tokenizer = AutoTokenizer.from_pretrained(self.__transformer_name)
@@ -58,9 +58,16 @@ class Experiment(object):
         start_epoch = self.__current_epoch
         for epoch in range(start_epoch, self.__epochs):  # loop over the dataset multiple times
             start_time = datetime.now()
-            self.__current_epoch = epoch
-            train_loss = self.__train()
-            val_loss = self.__val()
+            print(f"### Training epoch: {epoch + 1}")
+            if isinstance(self.__learning_rate, list):
+                for g in self.__optimizer.param_groups: 
+                    g['lr'] = self.__learning_rate[epoch]
+                lr = self.__optimizer.param_groups[0]['lr']
+                print(f'### LR = {lr}\n')
+            
+            train_loss, tr_accuracy = self.__train(epoch)
+
+            # we need to implement validation and add here
             self.__record_stats(train_loss, val_loss)
             self.__log_epoch_stats(start_time)
             self.__save_model()
@@ -70,30 +77,63 @@ class Experiment(object):
         torch.cuda.empty_cache()
 
     def __train(self):
+        tr_loss, tr_accuracy = 0, 0
+        nb_tr_examples, nb_tr_steps = 0, 0
+        #tr_preds, tr_labels = [], []
+        
+        # put model in training mode
         self.__model.train()
-        training_loss = []
+        
+        for idx, batch in enumerate(self.__train_loader):
+            
+            ids = batch['input_ids'].to(self.__device, dtype = torch.long)
+            mask = batch['attention_mask'].to(self.__device, dtype = torch.long)
+            labels = batch['labels'].to(self.__device, dtype = torch.long)
 
-        for i, (ids, mask, targets) in enumerate(self.__train_loader):
+            loss, tr_logits = self.__model(input_ids=ids, attention_mask=mask, labels=labels,
+                                return_dict=False)
+            tr_loss += loss.item()
+
+            nb_tr_steps += 1
+            nb_tr_examples += labels.size(0)
+            
+            if idx % 200==0:
+                loss_step = tr_loss/nb_tr_steps
+                print(f"Training loss after {idx:04d} training steps: {loss_step}")
+            
+            # compute training accuracy
+            flattened_targets = labels.view(-1) # shape (batch_size * seq_len,)
+            active_logits = tr_logits.view(-1, self.__model.num_labels) # shape (batch_size * seq_len, num_labels)
+            flattened_predictions = torch.argmax(active_logits, axis=1) # shape (batch_size * seq_len,)
+            
+            # only compute accuracy at active labels
+            active_accuracy = labels.view(-1) != -100 # shape (batch_size, seq_len)
+            #active_labels = torch.where(active_accuracy, labels.view(-1), torch.tensor(-100).type_as(labels))
+            
+            labels = torch.masked_select(flattened_targets, active_accuracy)
+            predictions = torch.masked_select(flattened_predictions, active_accuracy)
+            
+            #tr_labels.extend(labels)
+            #tr_preds.extend(predictions)
+
+            tmp_tr_accuracy = accuracy_score(labels.cpu().numpy(), predictions.cpu().numpy())
+            tr_accuracy += tmp_tr_accuracy
+        
+            # gradient clipping
+            torch.nn.utils.clip_grad_norm_(
+                parameters=self.__model.parameters(), max_norm=self.__experiment_config['model']['max_grad_norm']
+            )
+            
+            # backward pass
             self.__optimizer.zero_grad()
-            ids = ids.to(self.__device)
-            mask = mask.to(self.__device)
-            outputs = self.__model(ids, mask)
-            # targets = nn.utils.rnn.pack_padded_sequence(captions, lengths, batch_first=True).data
-            active_loss = mask.view(-1) == 1
-            active_logits = outputs.view(-1, self.__num_labels)
-            true_labels = targets.view(-1)
-            predictions = active_logits.argmax(dim=-1)
-            idxs = np.where(active_loss.cpu().numpy() == 1)[0]
-            active_logits = active_logits[idxs]
-            true_labels = true_labels[idxs].to(torch.long)
-            true_labels = true_labels.to(self.__device)
-            active_logits = active_logits.to(self.__device)
-            loss = self.__criterion(active_logits, true_labels)
-            training_loss.append(loss.item())
             loss.backward()
             self.__optimizer.step()
 
-        return np.mean(training_loss)
+        epoch_loss = tr_loss / nb_tr_steps
+        tr_accuracy = tr_accuracy / nb_tr_steps
+        print(f"Training loss epoch: {epoch_loss}")
+        print(f"Training accuracy epoch: {tr_accuracy}")
+        return epoch_loss, tr_accuracy
 
     def __val(self):
         self.__model.eval()
