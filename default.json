@@ -20,7 +20,6 @@
     "model_load": {
         "LOAD_TOKENS_FROM" : "NONE",
         "LOAD_MODEL_FROM" : "NONE",
-        "DOWNLOAD_MODEL_PATH" : "NEW_MODEL",
         "VER" : 0
         },
     
