@@ -1,4 +1,4 @@
-from experiment import Experiment
+from experiment_final import Experiment
 import sys
 
 # Main Driver for your code. Either run `python main.py` which will run the experiment with default config
