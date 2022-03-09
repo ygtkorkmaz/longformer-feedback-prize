@@ -167,9 +167,7 @@ def get_dataset(config_data, tokenizer):
     data = train_text_df[['id','text', 'entities']]
     train_dataset = data.loc[data['id'].isin(IDS[train_idx]),['text', 'entities']].reset_index(drop=True)
     val_dataset = data.loc[data['id'].isin(IDS[valid_idx]),['text', 'entities']].reset_index(drop=True)
-    val_raw_dataset = train_df.loc[train_df['id'].isin(IDS[valid_idx])].reset_index(drop=True)
     test_dataset = data.loc[data['id'].isin(IDS[test_idx]),['text', 'entities']].reset_index(drop=True)
-    test_raw_dataset = train_df.loc[train_df['id'].isin(IDS[test_idx])].reset_index(drop=True)
     # val_dataset = data.loc[data['id'].isin(IDS[valid_idx])].reset_index(drop=True)
     # test_dataset = data.loc[data['id'].isin(IDS[test_idx])].reset_index(drop=True)
 
@@ -190,5 +188,10 @@ def get_dataset(config_data, tokenizer):
                               batch_size=config_data['experiment']['batch_size'],
                               shuffle=False, num_workers=config_data['experiment']['num_workers'],
                               pin_memory=True)
+    
+    val_dataset = data.loc[data['id'].isin(IDS[valid_idx])].reset_index(drop=True)
+    test_dataset = data.loc[data['id'].isin(IDS[test_idx])].reset_index(drop=True)
+    val_raw_dataset = train_df.loc[train_df['id'].isin(IDS[valid_idx])].reset_index(drop=True)
+    test_raw_dataset = train_df.loc[train_df['id'].isin(IDS[test_idx])].reset_index(drop=True)
                               
-    return train_loader, val_loader, test_loader, val_raw_dataset, test_raw_dataset
+    return train_loader, val_loader, test_loader, val_dataset, test_dataset, val_raw_dataset, test_raw_dataset

@@ -24,9 +24,7 @@ class Experiment(object):
         # self.__tokenizer = AutoTokenizer.from_pretrained(self.__transformer_name)
         self.__model, self.__tokenizer, self.__config_model = feedback_model(experiment_config)
 
-
-
-        self.__train_loader, self.__val_loader, self.__test_loader, self.__val_raw_df, self.__test_raw_df = get_dataset(experiment_config, self.__tokenizer)
+        self.__train_loader, self.__val_loader, self.__test_loader, self.__val_df, self.__test_df, self.__val_raw_df, self.__test_raw_df = get_dataset(experiment_config, self.__tokenizer)
 
         # self.__generation_config = experiment_config['generation']
         self.__num_labels = 15
@@ -119,7 +117,7 @@ class Experiment(object):
             
             if idx % 200==0:
                 loss_step = tr_loss/nb_tr_steps
-                print(f"Training loss after {idx:04d} training steps: {loss_step}")
+                # print(f"Training loss after {idx:04d} training steps: {loss_step}")
                 print(f"Training loss after {idx:04d} training steps: {np.mean(loss_list)}")
 
             
@@ -175,7 +173,8 @@ class Experiment(object):
                 ids = batch['input_ids'].to(self.__device, dtype = torch.long)
                 mask = batch['attention_mask'].to(self.__device, dtype = torch.long)
                 labels = batch['labels'].to(self.__device, dtype = torch.long)
-                loss, outputs = self.__model(ids, attention_mask=mask, labels=labels, return_dict=False)
+                loss = self.__model(ids, attention_mask=mask, labels=labels, return_dict=False)[0]
+                outputs = self.__model(ids, attention_mask=mask, return_dict=False)
                 loss_list.append(loss.item())
                 all_preds = torch.argmax(outputs[0], axis=-1).cpu().numpy() 
 
@@ -200,9 +199,9 @@ class Experiment(object):
             val_loss = np.mean(loss_list)
 
             final_preds2 = []
-            for i in range(len(self.__val_raw_df)):
+            for i in range(len(self.__val_df)):
 
-                idx = self.__val_raw_df.id.values[i]
+                idx = self.__val_df.id.values[i]
                 #pred = [x.replace('B-','').replace('I-','') for x in y_pred2[i]]
                 pred = final_predictions[i] # Leave "B" and "I"
                 j = 0
@@ -262,7 +261,8 @@ class Experiment(object):
                 ids = batch['input_ids'].to(self.__device, dtype = torch.long)
                 mask = batch['attention_mask'].to(self.__device, dtype = torch.long)
                 labels = batch['labels'].to(self.__device, dtype = torch.long)
-                loss, outputs = self.__model(ids, attention_mask=mask, labels=labels, return_dict=False)
+                loss = self.__model(ids, attention_mask=mask, labels=labels, return_dict=False)[0]
+                outputs = self.__model(ids, attention_mask=mask, return_dict=False)
                 loss_list.append(loss.item())
                 all_preds = torch.argmax(outputs[0], axis=-1).cpu().numpy() 
 
@@ -285,9 +285,9 @@ class Experiment(object):
             test_loss = np.mean(loss_list)
 
             final_preds2 = []
-            for i in range(len(self.__test_raw_df)):
+            for i in range(len(self.__test_df)):
 
-                idx = self.__test_raw_df.id.values[i]
+                idx = self.__test_df.id.values[i]
                 #pred = [x.replace('B-','').replace('I-','') for x in y_pred2[i]]
                 pred = final_predictions[i] # Leave "B" and "I"
                 j = 0
