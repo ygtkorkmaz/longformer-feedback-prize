@@ -44,23 +44,42 @@ class FeedbackDataset(Dataset):
         word_ids = encoding.word_ids()  
         
         # CREATE TARGETS
-        if not self.get_wids:
-            previous_word_idx = None
-            label_ids = []
-            for word_idx in word_ids:                            
-                if word_idx is None:
-                    label_ids.append(-100)
-                elif word_idx != previous_word_idx:              
+        # if not self.get_wids:
+        #     previous_word_idx = None
+        #     label_ids = []
+        #     for word_idx in word_ids:                            
+        #         if word_idx is None:
+        #             label_ids.append(-100)
+        #         elif word_idx != previous_word_idx:              
+        #             label_ids.append( target_id_map[word_labels[word_idx]] )
+        #         else:
+        #             ## We can simplify this part by always labeling all tokens
+        #             if self.config_data['experiment']['LABEL_ALL_SUBTOKENS']:
+        #                 label_ids.append( target_id_map[word_labels[word_idx]] )
+        #             else:
+        #                 label_ids.append(-100)
+        #             ##
+        #         previous_word_idx = word_idx
+        #     encoding['labels'] = label_ids
+
+        ## TRIAL FOR VAL
+        previous_word_idx = None
+        label_ids = []
+        for word_idx in word_ids:                            
+            if word_idx is None:
+                label_ids.append(-100)
+            elif word_idx != previous_word_idx:              
+                label_ids.append( target_id_map[word_labels[word_idx]] )
+            else:
+                ## We can simplify this part by always labeling all tokens
+                if self.config_data['experiment']['LABEL_ALL_SUBTOKENS']:
                     label_ids.append( target_id_map[word_labels[word_idx]] )
                 else:
-                    ## We can simplify this part by always labeling all tokens
-                    if self.config_data['experiment']['LABEL_ALL_SUBTOKENS']:
-                        label_ids.append( target_id_map[word_labels[word_idx]] )
-                    else:
-                        label_ids.append(-100)
-                    ##
-                previous_word_idx = word_idx
-            encoding['labels'] = label_ids
+                    label_ids.append(-100)
+                ##
+            previous_word_idx = word_idx
+        encoding['labels'] = label_ids
+            
 
         # CONVERT TO TORCH TENSORS
         item = {key: torch.as_tensor(val) for key, val in encoding.items()}
@@ -145,8 +164,10 @@ def get_dataset(config_data, tokenizer):
     # CREATE TRAIN SUBSET AND VALID SUBSET
     data = train_text_df[['id','text', 'entities']]
     train_dataset = data.loc[data['id'].isin(IDS[train_idx]),['text', 'entities']].reset_index(drop=True)
-    val_dataset = data.loc[data['id'].isin(IDS[valid_idx])].reset_index(drop=True)
-    test_dataset = data.loc[data['id'].isin(IDS[test_idx])].reset_index(drop=True)
+    val_dataset = data.loc[data['id'].isin(IDS[valid_idx]),['text', 'entities']].reset_index(drop=True)
+    test_dataset = data.loc[data['id'].isin(IDS[test_idx]),['text', 'entities']].reset_index(drop=True)
+    # val_dataset = data.loc[data['id'].isin(IDS[valid_idx])].reset_index(drop=True)
+    # test_dataset = data.loc[data['id'].isin(IDS[test_idx])].reset_index(drop=True)
 
     # tokenizer = AutoTokenizer.from_pretrained(config_data['model']['transformer_path']) 
     training_set = FeedbackDataset(config_data, train_dataset, tokenizer, config_data['experiment']['max_length'], False)

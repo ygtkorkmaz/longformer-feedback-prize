@@ -135,44 +135,74 @@ class Experiment(object):
         print(f"Training accuracy epoch: {tr_accuracy}")
         return epoch_loss, tr_accuracy
 
+    # def __val(self):
+    #     self.__model.eval()
+    #     val_loss = 0
+    #     loss_list = []
+    #     f1_score_list = []
+
+    #     with torch.no_grad():
+    #         for i, (ids, mask, targets) in enumerate(self.__val_loader):
+    #             ids = ids.to(self.__device)
+    #             mask = mask.to(self.__device)
+    #             outputs = self.__model(ids, mask)
+    #             # targets = nn.utils.rnn.pack_padded_sequence(captions, lengths, batch_first=True).data
+    #             active_loss = mask.view(-1) == 1
+    #             active_logits = outputs.view(-1, self.__num_labels)
+    #             true_labels = targets.view(-1)
+    #             idxs = np.where(active_loss.cpu().numpy() == 1)[0]
+    #             active_logits = active_logits[idxs]
+    #             true_labels = true_labels[idxs].to(torch.long)
+    #             true_labels = true_labels.to(self.__device)
+    #             active_logits = active_logits.to(self.__device)
+    #             loss = self.__criterion(active_logits, true_labels)
+    #             loss_list.append(loss.item())
+    #             predictions = active_logits.argmax(dim=-1).cpu().numpy()
+    #             true_labels = true_labels.cpu().numpy()
+    #             f1_score = metrics.f1_score(true_labels, predictions, average="macro")
+    #             f1_score_list.append(f1_score)
+
+    #         val_loss = np.mean(loss_list)
+    #         val_f1_score = np.mean(f1_score_list)
+    #         if val_loss < self.__best_loss:
+    #             self.__best_loss = val_loss
+    #             self.__best_model = self.__model.state_dict()
+    #             self.__save_model(model_path='best_model.pt')
+    #             result_str = "Best Validation Loss: {}, Epoch: {}".format(self.__best_loss,
+    #                                                                         self.__current_epoch)
+    #             self.__log(result_str)
+
+    #     return val_loss, val_f1_score
+    
     def __val(self):
         self.__model.eval()
-        val_loss = 0
-        loss_list = []
-        f1_score_list = []
 
-        with torch.no_grad():
-            for i, (ids, mask, targets) in enumerate(self.__val_loader):
-                ids = ids.to(self.__device)
-                mask = mask.to(self.__device)
-                outputs = self.__model(ids, mask)
-                # targets = nn.utils.rnn.pack_padded_sequence(captions, lengths, batch_first=True).data
-                active_loss = mask.view(-1) == 1
-                active_logits = outputs.view(-1, self.__num_labels)
-                true_labels = targets.view(-1)
-                idxs = np.where(active_loss.cpu().numpy() == 1)[0]
-                active_logits = active_logits[idxs]
-                true_labels = true_labels[idxs].to(torch.long)
-                true_labels = true_labels.to(self.__device)
-                active_logits = active_logits.to(self.__device)
-                loss = self.__criterion(active_logits, true_labels)
-                loss_list.append(loss.item())
-                predictions = active_logits.argmax(dim=-1).cpu().numpy()
-                true_labels = true_labels.cpu().numpy()
-                f1_score = metrics.f1_score(true_labels, predictions, average="macro")
-                f1_score_list.append(f1_score)
+        for idx, batch in enumerate(self.__train_loader):
 
-            val_loss = np.mean(loss_list)
-            val_f1_score = np.mean(f1_score_list)
-            if val_loss < self.__best_loss:
-                self.__best_loss = val_loss
-                self.__best_model = self.__model.state_dict()
-                self.__save_model(model_path='best_model.pt')
-                result_str = "Best Validation Loss: {}, Epoch: {}".format(self.__best_loss,
-                                                                            self.__current_epoch)
-                self.__log(result_str)
+            # MOVE BATCH TO GPU AND INFER
+            ids = batch['input_ids'].to(self.__device, dtype = torch.long)
+            mask = batch['attention_mask'].to(self.__device, dtype = torch.long)
+            labels = batch['labels'].to(self.__device, dtype = torch.long)
+            loss, outputs = self.__model(ids, attention_mask=mask, labels=labels, return_dict=False)
+            all_preds = torch.argmax(outputs[0], axis=-1).cpu().numpy() 
 
-        return val_loss, val_f1_score
+            # INTERATE THROUGH EACH TEXT AND GET PRED
+            predictions = []
+            for k,text_preds in enumerate(all_preds):
+                token_preds = [id_target_map[i] for i in text_preds]
+
+                prediction = []
+                word_ids = batch['wids'][k].numpy()  
+                previous_word_idx = -1
+                for idx,word_idx in enumerate(word_ids):                            
+                    if word_idx == -1:
+                        pass
+                    elif word_idx != previous_word_idx:              
+                        prediction.append(token_preds[idx])
+                        previous_word_idx = word_idx
+                predictions.append(prediction)
+        
+        return predictions
 
     def test(self, model_loc=None):
         self.__best_model = self.__model
