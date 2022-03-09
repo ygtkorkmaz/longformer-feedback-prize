@@ -2,8 +2,8 @@
     "experiment_name":"LongFormer",
 
     "dataset": {
-        "train_csv" : "../input/feedback-prize-2021/train.csv",
-        "train_text" : "../input/feedback-prize-2021/train"
+        "train_csv" : "./drive/Shareddrives/CSE251b/Final_Project/feedback-prize-2021/input/train.csv",
+        "train_text" : "./drive/Shareddrives/CSE251b/Final_Project/feedback-prize-2021/input/train"
         },
 
     "experiment": {
@@ -24,7 +24,7 @@
         },
     
     "model": {
-        "transformer_name" : "allenai/longformer_base_4096",   
+        "transformer_name" : "allenai/longformer-base-4096",   
         "max_length" : 1024,
         "train_batch_size" : 4,
         "valid_batch_size" : 4,

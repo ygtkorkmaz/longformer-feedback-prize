@@ -3,7 +3,7 @@ import torch
 import os
 from torch.utils.data import DataLoader, Dataset
 import pandas as pd
-import tqdm
+from tqdm import tqdm
 from ast import literal_eval
 import numpy as np
 from transformers import AutoTokenizer
