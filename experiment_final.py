@@ -26,7 +26,7 @@ class Experiment(object):
 
 
 
-        self.__train_loader, self.__val_loader, self.__test_loader = get_dataset(experiment_config, self.__tokenizer)
+        self.__train_loader, self.__val_loader, self.__test_loader, self.__val_raw_df, self.__test_raw_df = get_dataset(experiment_config, self.__tokenizer)
 
         # self.__generation_config = experiment_config['generation']
         self.__num_labels = 15
@@ -36,10 +36,11 @@ class Experiment(object):
         self.__training_losses = []
         self.__val_losses = []
         self.__best_model = None  # Save your best model in this field and use this in test method.
-        self.__best_loss = inf
+        self.__best_f1 = 0
+        self.__best_f1_scores = None
 
         self.__device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.__criterion = nn.CrossEntropyLoss()
+        # self.__criterion = nn.CrossEntropyLoss()
         if isinstance(self.__learning_rate, list):
             self.__optimizer = torch.optim.Adam(params=self.__model.parameters(), lr=self.__learning_rate[0])
         else:
@@ -52,7 +53,7 @@ class Experiment(object):
     def __init_model(self):
         if torch.cuda.is_available():
             self.__model = self.__model.cuda().float()
-            self.__criterion = self.__criterion.cuda()
+            # self.__criterion = self.__criterion.cuda()
 
     def run(self):
         start_epoch = self.__current_epoch
@@ -65,12 +66,28 @@ class Experiment(object):
                 lr = self.__optimizer.param_groups[0]['lr']
                 print(f'### LR = {lr}\n')
             
-            train_loss, tr_accuracy = self.__train(epoch)
+            train_loss, train_accuracy = self.__train()
+            val_loss, val_predictions_df = self.__val()
+            total_f1, f1_scores = self.get_f1_score(val_predictions_df, self.__val_raw_df)
+            if total_f1 >= self.__best_f1:
+                self.__best_f1_scores = f1_scores
+                self.__best_f1 = total_f1
+                self.__best_model = self.__model.state_dict()
+                self.__save_model(model_path='best_model.pt')                
 
             # we need to implement validation and add here
             self.__record_stats(train_loss, val_loss)
             self.__log_epoch_stats(start_time)
             self.__save_model()
+        
+        print('Training Ended')
+        print(f1_scores)
+        print('average f1: {}'.format(total_f1))
+        print()
+        print('Best Specs')
+        print(self.__best_f1_scores)
+        print('Best avarage f1: {}'.format(self.__best_f1))
+        print()
         
         # housekeeping
         gc.collect() 
@@ -79,6 +96,8 @@ class Experiment(object):
     def __train(self):
         tr_loss, tr_accuracy = 0, 0
         nb_tr_examples, nb_tr_steps = 0, 0
+        loss_list = []
+        acc_list = []
         #tr_preds, tr_labels = [], []
         
         # put model in training mode
@@ -93,6 +112,7 @@ class Experiment(object):
             loss, tr_logits = self.__model(input_ids=ids, attention_mask=mask, labels=labels,
                                 return_dict=False)
             tr_loss += loss.item()
+            loss_list.append(loss.item())
 
             nb_tr_steps += 1
             nb_tr_examples += labels.size(0)
@@ -100,6 +120,8 @@ class Experiment(object):
             if idx % 200==0:
                 loss_step = tr_loss/nb_tr_steps
                 print(f"Training loss after {idx:04d} training steps: {loss_step}")
+                print(f"Training loss after {idx:04d} training steps: {np.mean(loss_list)}")
+
             
             # compute training accuracy
             flattened_targets = labels.view(-1) # shape (batch_size * seq_len,)
@@ -118,6 +140,7 @@ class Experiment(object):
 
             tmp_tr_accuracy = accuracy_score(labels.cpu().numpy(), predictions.cpu().numpy())
             tr_accuracy += tmp_tr_accuracy
+            acc_list.append(tmp_tr_accuracy)
         
             # gradient clipping
             torch.nn.utils.clip_grad_norm_(
@@ -130,79 +153,95 @@ class Experiment(object):
             self.__optimizer.step()
 
         epoch_loss = tr_loss / nb_tr_steps
+        train_loss = np.mean(loss_list)
+        # return that loss
         tr_accuracy = tr_accuracy / nb_tr_steps
-        print(f"Training loss epoch: {epoch_loss}")
-        print(f"Training accuracy epoch: {tr_accuracy}")
-        return epoch_loss, tr_accuracy
-
-    # def __val(self):
-    #     self.__model.eval()
-    #     val_loss = 0
-    #     loss_list = []
-    #     f1_score_list = []
-
-    #     with torch.no_grad():
-    #         for i, (ids, mask, targets) in enumerate(self.__val_loader):
-    #             ids = ids.to(self.__device)
-    #             mask = mask.to(self.__device)
-    #             outputs = self.__model(ids, mask)
-    #             # targets = nn.utils.rnn.pack_padded_sequence(captions, lengths, batch_first=True).data
-    #             active_loss = mask.view(-1) == 1
-    #             active_logits = outputs.view(-1, self.__num_labels)
-    #             true_labels = targets.view(-1)
-    #             idxs = np.where(active_loss.cpu().numpy() == 1)[0]
-    #             active_logits = active_logits[idxs]
-    #             true_labels = true_labels[idxs].to(torch.long)
-    #             true_labels = true_labels.to(self.__device)
-    #             active_logits = active_logits.to(self.__device)
-    #             loss = self.__criterion(active_logits, true_labels)
-    #             loss_list.append(loss.item())
-    #             predictions = active_logits.argmax(dim=-1).cpu().numpy()
-    #             true_labels = true_labels.cpu().numpy()
-    #             f1_score = metrics.f1_score(true_labels, predictions, average="macro")
-    #             f1_score_list.append(f1_score)
-
-    #         val_loss = np.mean(loss_list)
-    #         val_f1_score = np.mean(f1_score_list)
-    #         if val_loss < self.__best_loss:
-    #             self.__best_loss = val_loss
-    #             self.__best_model = self.__model.state_dict()
-    #             self.__save_model(model_path='best_model.pt')
-    #             result_str = "Best Validation Loss: {}, Epoch: {}".format(self.__best_loss,
-    #                                                                         self.__current_epoch)
-    #             self.__log(result_str)
-
-    #     return val_loss, val_f1_score
+        train_accuracy = np.mean(acc_list)
+        # return that acc
+        print(f"Training loss epoch: {train_loss}")
+        print(f"Training accuracy epoch: {train_accuracy}")
+        return train_loss, train_accuracy
     
     def __val(self):
         self.__model.eval()
+        val_loss = 0
+        loss_list = []
+        final_predictions = []
 
-        for idx, batch in enumerate(self.__train_loader):
+        with torch.no_grad():
+            for idx, batch in enumerate(self.__val_loader):
 
-            # MOVE BATCH TO GPU AND INFER
-            ids = batch['input_ids'].to(self.__device, dtype = torch.long)
-            mask = batch['attention_mask'].to(self.__device, dtype = torch.long)
-            labels = batch['labels'].to(self.__device, dtype = torch.long)
-            loss, outputs = self.__model(ids, attention_mask=mask, labels=labels, return_dict=False)
-            all_preds = torch.argmax(outputs[0], axis=-1).cpu().numpy() 
+                # MOVE BATCH TO GPU AND INFER
+                ids = batch['input_ids'].to(self.__device, dtype = torch.long)
+                mask = batch['attention_mask'].to(self.__device, dtype = torch.long)
+                labels = batch['labels'].to(self.__device, dtype = torch.long)
+                loss, outputs = self.__model(ids, attention_mask=mask, labels=labels, return_dict=False)
+                loss_list.append(loss.item())
+                all_preds = torch.argmax(outputs[0], axis=-1).cpu().numpy() 
 
-            # INTERATE THROUGH EACH TEXT AND GET PRED
-            predictions = []
-            for k,text_preds in enumerate(all_preds):
-                token_preds = [id_target_map[i] for i in text_preds]
+                # INTERATE THROUGH EACH TEXT AND GET PRED
+                predictions = []
+                for k,text_preds in enumerate(all_preds):
+                    token_preds = [id_target_map[i] for i in text_preds]
 
-                prediction = []
-                word_ids = batch['wids'][k].numpy()  
-                previous_word_idx = -1
-                for idx,word_idx in enumerate(word_ids):                            
-                    if word_idx == -1:
-                        pass
-                    elif word_idx != previous_word_idx:              
-                        prediction.append(token_preds[idx])
-                        previous_word_idx = word_idx
-                predictions.append(prediction)
+                    prediction = []
+                    word_ids = batch['wids'][k].numpy()  
+                    previous_word_idx = -1
+                    for idx,word_idx in enumerate(word_ids):                            
+                        if word_idx == -1:
+                            pass
+                        elif word_idx != previous_word_idx:              
+                            prediction.append(token_preds[idx])
+                            previous_word_idx = word_idx
+                    predictions.append(prediction)
+
+                final_predictions.extend(predictions)
+
+            val_loss = np.mean(loss_list)
+
+            final_preds2 = []
+            for i in range(len(self.__val_raw_df)):
+
+                idx = self.__val_raw_df.id.values[i]
+                #pred = [x.replace('B-','').replace('I-','') for x in y_pred2[i]]
+                pred = final_predictions[i] # Leave "B" and "I"
+                j = 0
+                while j < len(pred):
+                    cls = pred[j]
+                    if cls == 'O': j += 1
+                    else: cls = cls.replace('B','I') # spans start with B
+                    end = j + 1
+                    while end < len(pred) and pred[end] == cls:
+                        end += 1
+                    
+                    if cls != 'O' and cls != '' and end - j > 7:
+                        final_preds2.append((idx, cls.replace('I-',''),
+                                            ' '.join(map(str, list(range(j, end))))))
+                
+                    j = end
+                
+            oof = pd.DataFrame(final_preds2)
+            oof.columns = ['id','class','predictionstring']
         
-        return predictions
+        return val_loss, oof
+    
+    def get_f1_score(self, prediction_df, target_df):
+        # COMPUTE F1 SCORE
+        f1s = []
+        f1_dict = dict()
+        CLASSES = prediction_df['class'].unique()
+        print()
+        for c in CLASSES:
+            pred_df = prediction_df.loc[prediction_df['class']==c].copy()
+            gt_df = target_df.loc[target_df['discourse_type']==c].copy()
+            f1 = score_feedback_comp(pred_df, gt_df)
+            print(c,f1)
+            f1s.append(f1)
+            f1_dict[c] = f1
+        print()
+        print('Overall',np.mean(f1s))
+        print()
+        return np.mean(f1s), f1_dict
 
     def test(self, model_loc=None):
         self.__best_model = self.__model
@@ -215,41 +254,66 @@ class Experiment(object):
         self.__best_model.eval()
         test_loss = 0
         loss_list = []
-        f1_score_list = []       
+        final_predictions = []
         with torch.no_grad():
-            for i, (ids, mask, targets) in enumerate(self.__test_loader):
-                ids = ids.to(self.__device)
-                mask = mask.to(self.__device)
-                outputs = self.__model(ids, mask)
-                # targets = nn.utils.rnn.pack_padded_sequence(captions, lengths, batch_first=True).data
-                active_loss = mask.view(-1) == 1
-                active_logits = outputs.view(-1, self.__num_labels)
-                true_labels = targets.view(-1)
-                idxs = np.where(active_loss.cpu().numpy() == 1)[0]
-                active_logits = active_logits[idxs]
-                true_labels = true_labels[idxs].to(torch.long)
-                true_labels = true_labels.to(self.__device)
-                active_logits = active_logits.to(self.__device)
-                loss = self.__criterion(active_logits, true_labels)
+            for idx, batch in enumerate(self.__test_loader):
+
+                # MOVE BATCH TO GPU AND INFER
+                ids = batch['input_ids'].to(self.__device, dtype = torch.long)
+                mask = batch['attention_mask'].to(self.__device, dtype = torch.long)
+                labels = batch['labels'].to(self.__device, dtype = torch.long)
+                loss, outputs = self.__model(ids, attention_mask=mask, labels=labels, return_dict=False)
                 loss_list.append(loss.item())
-                predictions = active_logits.argmax(dim=-1).cpu().numpy()
-                true_labels = true_labels.cpu().numpy()
-                f1_score = metrics.f1_score(true_labels, predictions, average="macro")
-                f1_score_list.append(f1_score)
+                all_preds = torch.argmax(outputs[0], axis=-1).cpu().numpy() 
+
+                # INTERATE THROUGH EACH TEXT AND GET PRED
+                predictions = []
+                for k,text_preds in enumerate(all_preds):
+                    token_preds = [id_target_map[i] for i in text_preds]
+
+                    prediction = []
+                    word_ids = batch['wids'][k].numpy()  
+                    previous_word_idx = -1
+                    for idx,word_idx in enumerate(word_ids):                            
+                        if word_idx == -1:
+                            pass
+                        elif word_idx != previous_word_idx:              
+                            prediction.append(token_preds[idx])
+                            previous_word_idx = word_idx
+                    predictions.append(prediction)
+                final_predictions.extend(predictions)
             test_loss = np.mean(loss_list)
-            test_f1_score = np.mean(f1_score_list)
 
-        result_str = "Test Performance: Loss: {}, f1 Score: {}".format(test_loss, test_f1_score)
+            final_preds2 = []
+            for i in range(len(self.__test_raw_df)):
+
+                idx = self.__test_raw_df.id.values[i]
+                #pred = [x.replace('B-','').replace('I-','') for x in y_pred2[i]]
+                pred = final_predictions[i] # Leave "B" and "I"
+                j = 0
+                while j < len(pred):
+                    cls = pred[j]
+                    if cls == 'O': j += 1
+                    else: cls = cls.replace('B','I') # spans start with B
+                    end = j + 1
+                    while end < len(pred) and pred[end] == cls:
+                        end += 1
+                    
+                    if cls != 'O' and cls != '' and end - j > 7:
+                        final_preds2.append((idx, cls.replace('I-',''),
+                                            ' '.join(map(str, list(range(j, end))))))
+                
+                    j = end
+                
+            oof = pd.DataFrame(final_preds2)
+            oof.columns = ['id','class','predictionstring']
+
+            test_total_f1, test_f1_scores = self.get_f1_score(oof, self.__test_raw_df)
+
+        result_str = "Test Performance: Loss: {}, f1 Score: {}".format(test_loss, test_total_f1)
         self.__log(result_str)
-
-        return test_loss, predictions
-
-    def test_visualizer(self, predictions, targets):
-        for prediction, target in zip(predictions, targets):
-            target_type = id_target_map[target]
-            predicted_type = id_target_map[prediction]
-            print('Target Type: {}  Target id: {}'.format(target_type, target))
-            print('Predicted Type: {}  Predicted id: {}'.format(predicted_type, prediction))
+        print("Test f1 Scores by Class:")
+        print(test_f1_scores)
 
     def __save_model(self, model_path = 'latest_model.pt'):
         root_model_path = os.path.join(self.__experiment_dir, model_path)
