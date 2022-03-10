@@ -45,7 +45,7 @@ class Experiment(object):
             self.__optimizer = torch.optim.Adam(params=self.__model.parameters(), lr=self.__learning_rate)
         self.__init_model()
         os.makedirs(ROOT_STATS_DIR, exist_ok=True)
-        os.makedirs(self.__experiment_dir)
+        os.makedirs(self.__experiment_dir, exist_ok=True)
 
 
     def __init_model(self):
