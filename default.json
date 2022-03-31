@@ -2,19 +2,21 @@
     "experiment_name":"LongFormer",
 
     "dataset": {
-        "train_csv" : "./drive/Shareddrives/CSE251b/Final_Project/feedback-prize-2021/input/train.csv",
-        "train_text" : "./drive/Shareddrives/CSE251b/Final_Project/feedback-prize-2021/input/train"
+        "train_csv" : "/feedback-prize-2021/input/train.csv",
+        "train_text" : "/feedback-prize-2021/input/train"
         },
 
     "experiment": {
         "LABEL_ALL_SUBTOKENS" : true,
-        "train_text" : "../input/feedback-prize-2021/train",
         "batch_size" : 4,
         "num_workers" : 2,
         "max_length" : 1024,
         "LOAD_TOKENS_FROM" : "NONE",
         "num_epochs" : 5,
-        "learning_rate" : [2.5e-5, 2.5e-5, 2.5e-6, 2.5e-6, 2.5e-7]
+        "learning_rate" : [2.5e-5, 2.5e-5, 2.5e-6, 2.5e-6, 2.5e-7],
+        "front_glob_att_size" : 50,
+        "back_glob_att_size" : 50,
+        "global_att" : 0
         },
 
     "model_load": {
@@ -27,6 +29,4 @@
         "transformer_name" : "allenai/longformer-base-4096",   
         "max_grad_norm" : 10
     }
-
-
 }

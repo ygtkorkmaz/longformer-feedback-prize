@@ -6,8 +6,8 @@ import torch.nn as nn
 from datetime import datetime
 import gc
 
-from model_final import *
-from load_dataset_final import *
+from model import *
+from load_dataset import *
 from utils import *
 from constants import *
 from sklearn.metrics import accuracy_score
@@ -18,6 +18,12 @@ class Experiment(object):
         if experiment_config is None:
             raise Exception("Configuration file doesn't exist: ", name)
         self.__name = experiment_config['experiment_name']
+        
+        ###ADD for glob
+        self.__front_glob_size = experiment_config['experiment']['front_glob_att_size']
+        self.__back_glob_size = experiment_config['experiment']['back_glob_att_size']
+        self.__global_att = experiment_config['experiment']['global_att']
+
         self.__experiment_config = experiment_config
         # self.__transformer_name = experiment_config['model']['transformer_name']
         self.__experiment_dir = os.path.join(ROOT_STATS_DIR, self.__name)
@@ -107,8 +113,21 @@ class Experiment(object):
             mask = batch['attention_mask'].to(self.__device, dtype = torch.long)
             labels = batch['labels'].to(self.__device, dtype = torch.long)
 
-            loss, tr_logits = self.__model(input_ids=ids, attention_mask=mask, labels=labels,
-                                return_dict=False)
+            #Try out global attention
+            if self.__global_att == 1:
+              glob_mask_front = torch.ones(mask.shape[0], self.__front_glob_size)
+              glob_mask_back = torch.ones(mask.shape[0], self.__back_glob_size)
+              glob_mask_center = torch.zeros(
+                mask.shape[0], (mask.shape[1] - (self.__front_glob_size + self.__back_glob_size)))
+              glob_mask = torch.cat((glob_mask_front, glob_mask_center, glob_mask_back), 1)
+              glob_mask = glob_mask.to(self.__device, dtype = torch.long)
+              
+              loss, tr_logits = self.__model(input_ids=ids, attention_mask=mask, global_attention_mask=glob_mask,
+              labels=labels, return_dict=False)
+            
+            else:
+                loss, tr_logits = self.__model(input_ids=ids, attention_mask=mask, labels=labels,
+                                    return_dict=False)
             tr_loss += loss.item()
             loss_list.append(loss.item())
 
@@ -173,8 +192,24 @@ class Experiment(object):
                 ids = batch['input_ids'].to(self.__device, dtype = torch.long)
                 mask = batch['attention_mask'].to(self.__device, dtype = torch.long)
                 labels = batch['labels'].to(self.__device, dtype = torch.long)
-                loss = self.__model(ids, attention_mask=mask, labels=labels, return_dict=False)[0]
-                outputs = self.__model(ids, attention_mask=mask, return_dict=False)
+
+                #Try out global attention
+                if self.__global_att == 1:
+                  glob_mask_front = torch.ones(mask.shape[0], self.__front_glob_size)
+                  glob_mask_back = torch.ones(mask.shape[0], self.__back_glob_size)
+                  glob_mask_center = torch.zeros(
+                    mask.shape[0], (mask.shape[1] - (self.__front_glob_size + self.__back_glob_size)))
+                  glob_mask = torch.cat((glob_mask_front, glob_mask_center, glob_mask_back), 1)
+                  glob_mask = glob_mask.to(self.__device, dtype = torch.long)
+              
+                  loss = self.__model(ids, attention_mask=mask, global_attention_mask=glob_mask,
+                  labels=labels, return_dict=False)[0]
+                  outputs = self.__model(ids, attention_mask=mask, global_attention_mask=glob_mask,
+                  return_dict=False)
+                else:
+                  loss = self.__model(ids, attention_mask=mask, labels=labels, return_dict=False)[0]
+                  outputs = self.__model(ids, attention_mask=mask, return_dict=False)
+                
                 loss_list.append(loss.item())
                 all_preds = torch.argmax(outputs[0], axis=-1).cpu().numpy() 
 
@@ -261,8 +296,25 @@ class Experiment(object):
                 ids = batch['input_ids'].to(self.__device, dtype = torch.long)
                 mask = batch['attention_mask'].to(self.__device, dtype = torch.long)
                 labels = batch['labels'].to(self.__device, dtype = torch.long)
-                loss = self.__model(ids, attention_mask=mask, labels=labels, return_dict=False)[0]
-                outputs = self.__model(ids, attention_mask=mask, return_dict=False)
+
+                if self.__global_att == 1:
+
+                  glob_mask_front = torch.ones(mask.shape[0], self.__front_glob_size)
+                  glob_mask_back = torch.ones(mask.shape[0], self.__back_glob_size)
+                  glob_mask_center = torch.zeros(
+                    mask.shape[0], (mask.shape[1] - (self.__front_glob_size + self.__back_glob_size)))
+                  glob_mask = torch.cat((glob_mask_front, glob_mask_center, glob_mask_back), 1)
+                  glob_mask = glob_mask.to(self.__device, dtype = torch.long)
+              
+                  
+                  loss = self.__model(ids, attention_mask=mask, global_attention_mask=glob_mask,
+                  labels=labels, return_dict=False)[0]
+                  outputs = self.__model(ids, attention_mask=mask, global_attention_mask=glob_mask,
+                  return_dict=False)
+                else:
+                  loss = self.__model(ids, attention_mask=mask, labels=labels, return_dict=False)[0]
+                  outputs = self.__model(ids, attention_mask=mask, return_dict=False)
+                
                 loss_list.append(loss.item())
                 all_preds = torch.argmax(outputs[0], axis=-1).cpu().numpy() 
 
