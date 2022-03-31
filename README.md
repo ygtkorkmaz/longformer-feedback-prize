@@ -13,3 +13,7 @@ The dataset, downloaded from the Kaggle [site](https://www.kaggle.com/competitio
     python main.py
 
 The user can freely experiment with the parameters under the experiment group of `default.json` file. These hyperparameters include batch size, learning rate, gradient norm, maximum tokenization length etc.
+
+Alternatively, the users can create their own .json file, following a similar architecture to `default.json`. In that case, the user should run the following command:
+
+    python main.py your_own_json_file.json
